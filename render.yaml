@@ -1,0 +1,36 @@
+# Render Blueprint: the BD CRM web app + its PostgreSQL database, both in Singapore.
+# Render reads this file when you choose "New → Blueprint" and pick this repository.
+# See docs/HOSTING-RENDER.md for the step-by-step guide.
+
+services:
+  - type: web
+    name: firmcrm
+    runtime: docker
+    region: singapore
+    plan: standard            # 2 GB RAM — comfortable for PDF/Excel exports. "starter" (512 MB) also works for a small team.
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true          # every push to main redeploys (migrations run automatically on start)
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: firmcrm-db
+          property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true   # Render creates a long random secret for you
+      - key: SEED_ADMIN_EMAIL
+        sync: false           # you type this in when creating the Blueprint (the Head of BD's email)
+      - key: SEED_ADMIN_PASSWORD
+        sync: false           # a temporary password; you must change it at first sign-in
+      - key: TZ
+        value: Asia/Bangkok
+
+databases:
+  - name: firmcrm-db
+    region: singapore
+    plan: basic-1gb           # daily backups / point-in-time recovery come with paid database plans
+    postgresMajorVersion: "16"
+    databaseName: bdcrm
+    user: bdcrm
+    ipAllowList: []           # no access from the internet; only the app (inside Render) can connect

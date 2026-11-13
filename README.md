@@ -6,7 +6,8 @@ See **PLAN.md** (scope, data model, phases) and **CLAUDE.md** (conventions for d
 
 | Document | For |
 |---|---|
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | IT: install, HTTPS, backups/restore, upgrades, monitoring |
+| [docs/HOSTING-RENDER.md](docs/HOSTING-RENDER.md) | **No IT team:** put the CRM online with Render, step by step |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | IT: install on your own server, HTTPS, backups/restore, upgrades, monitoring |
 | [docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md) | Head of BD: users, roles, confidential work, PDPA, imports, audit log |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security review and recommendations |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Performance at 50,000 contacts |

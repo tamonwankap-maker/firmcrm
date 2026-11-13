@@ -315,3 +315,4 @@ Each phase ends with: tests green, demo seed data, short summary + screenshots f
 | 13 Nov 2026 | Microsoft 365 (Entra ID) sign-in: documented in docs/ENTRA-ID.md, not built yet (needs the firm's Azure app registration to test). |
 | 13 Nov 2026 | PDF exports capped at 1,000 rows; Excel has no cap. |
 | 13 Nov 2026 | Backups nightly at 02:00 Bangkok, 30-day retention; off-server copies are IT's responsibility. |
+| 13 Nov 2026 | No in-house IT: host on Render (Singapore) via `render.yaml` — web Standard + Postgres Basic-1GB; Render handles HTTPS and DB backups. Self-hosted Docker remains supported. |
