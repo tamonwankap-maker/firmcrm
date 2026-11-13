@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens (shadcn/ui naming). Navy + warm gold, suited to a law firm. */
+:root {
+  --background: oklch(0.99 0.002 250);
+  --foreground: oklch(0.2 0.02 255);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --primary: oklch(0.32 0.07 255);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.95 0.008 255);
+  --secondary-foreground: oklch(0.25 0.03 255);
+  --muted: oklch(0.96 0.005 255);
+  --muted-foreground: oklch(0.5 0.02 255);
+  --accent: oklch(0.95 0.01 255);
+  --accent-foreground: oklch(0.25 0.03 255);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.91 0.008 255);
+  --input: oklch(0.88 0.01 255);
+  --ring: oklch(0.55 0.09 255);
+  --brand-gold: oklch(0.72 0.11 80);
+  --sidebar: oklch(0.24 0.05 255);
+  --sidebar-foreground: oklch(0.92 0.01 255);
+  --sidebar-muted: oklch(0.7 0.03 255);
+  --sidebar-active: oklch(0.32 0.06 255);
+  /* Chart series — validated categorical order (dataviz reference palette). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  --chart-grid: oklch(0.92 0.005 255);
+}
+
+.dark {
+  --background: oklch(0.17 0.015 255);
+  --foreground: oklch(0.94 0.005 255);
+  --card: oklch(0.21 0.018 255);
+  --primary: oklch(0.75 0.08 250);
+  --primary-foreground: oklch(0.18 0.02 255);
+  --secondary: oklch(0.27 0.02 255);
+  --secondary-foreground: oklch(0.94 0 0);
+  --muted: oklch(0.25 0.015 255);
+  --muted-foreground: oklch(0.7 0.02 255);
+  --accent: oklch(0.28 0.02 255);
+  --accent-foreground: oklch(0.94 0 0);
+  --border: oklch(0.3 0.02 255);
+  --input: oklch(0.34 0.02 255);
+  --sidebar: oklch(0.14 0.02 255);
+  --sidebar-active: oklch(0.24 0.03 255);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --chart-grid: oklch(0.3 0.015 255);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand-gold: var(--brand-gold);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  /* System fonts with Thai fallbacks — no external font download needed on a self-hosted server. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Leelawadee UI", "Sarabun", Tahoma,
+    sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}

@@ -1,0 +1,20 @@
+# Local development database only. The app runs on your machine with `npm run dev`.
+#   docker compose -f docker-compose.dev.yml up -d
+name: bd-crm-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bdcrm
+      POSTGRES_USER: bdcrm
+      POSTGRES_PASSWORD: bdcrm
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+      - ./docker/init-test-dbs.sql:/docker-entrypoint-initdb.d/10-test-dbs.sql:ro
+
+volumes:
+  pgdata-dev:

@@ -1,0 +1,807 @@
+// Law Firm BD CRM — database schema.
+// See PLAN.md §2 for the narrative version. Conventions:
+//  - ids are cuid strings
+//  - money = Decimal(14,2) + Currency
+//  - date-only fields use @db.Date; timestamps are timestamptz
+//  - main records are soft-deleted via archivedAt
+//  - extra integrity rules (check constraints, trigram indexes) live in raw SQL migrations
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  ADMIN
+  BD
+  PARTNER
+  VIEWER
+}
+
+enum Currency {
+  THB
+  USD
+}
+
+enum OrganisationType {
+  CLIENT
+  PROSPECT
+  REFERRER
+  FOREIGN_LAW_FIRM
+  INTERMEDIARY
+  MEDIA
+  DIRECTORY
+  ASSOCIATION
+}
+
+enum OrganisationStatus {
+  ACTIVE
+  DORMANT
+  LOST
+}
+
+enum PreferredLanguage {
+  EN
+  TH
+  OTHER
+}
+
+enum MailingList {
+  NEWSLETTER
+  CLIENT_ALERTS
+  EVENT_INVITES
+}
+
+enum ConsentSource {
+  WEB_FORM
+  EVENT_SIGNUP
+  EMAIL_REPLY
+  VERBAL
+  BUSINESS_CARD
+  IMPORT
+  OTHER
+}
+
+enum ActivityType {
+  MEETING
+  CALL
+  LUNCH
+  EMAIL
+  EVENT
+  REFERRAL_GIVEN
+  REFERRAL_RECEIVED
+  GIFT
+}
+
+enum OpportunitySource {
+  REPEAT_CLIENT
+  REFERRAL
+  FOREIGN_LAW_FIRM_REFERRAL
+  RFP_TENDER
+  EVENT
+  INBOUND
+  OTHER
+}
+
+enum OpportunityStage {
+  LEAD
+  QUALIFIED
+  PROPOSAL_PREPARING
+  SUBMITTED
+  WON
+  LOST
+  ON_HOLD
+}
+
+enum ConflictStatus {
+  NOT_REQUESTED
+  REQUESTED
+  CLEARED
+  CONFLICT
+}
+
+enum OutcomeReason {
+  PRICE
+  RELATIONSHIP
+  EXPERTISE
+  CONFLICT
+  TIMING
+  OTHER
+}
+
+enum PitchFormat {
+  WRITTEN
+  PRESENTATION
+  BOTH
+  EMAIL
+}
+
+enum PitchStatus {
+  DRAFTING
+  PARTNER_REVIEW
+  SUBMITTED
+}
+
+enum SubmissionStatus {
+  PLANNING
+  DRAFTING
+  PARTNER_REVIEW
+  SUBMITTED
+  RESEARCH_INTERVIEW
+  RESULTS_PUBLISHED
+}
+
+enum AwardStatus {
+  ENTERED
+  SHORTLISTED
+  WON
+  NOT_WON
+}
+
+enum EventFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum EventStatus {
+  PLANNING
+  INVITES_SENT
+  HELD
+  CANCELLED
+}
+
+enum Rsvp {
+  NO_REPLY
+  YES
+  NO
+  MAYBE
+}
+
+enum ContentType {
+  CLIENT_ALERT
+  ARTICLE
+  GUIDE
+  LINKEDIN_POST
+  MEDIA_INTERVIEW
+  SPEAKING
+}
+
+enum ContentStatus {
+  IDEA
+  DRAFTING
+  REVIEW
+  PUBLISHED
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ARCHIVE
+  RESTORE
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  EXPORT
+  PASSWORD_RESET
+}
+
+// ───────────────────────── People & access ─────────────────────────
+
+/// Everyone at the firm. Lawyers who never log in (speakers, ranked lawyers…) have canLogin = false.
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  emailVerified      DateTime? // Auth.js adapter field (future Entra ID)
+  image              String? // Auth.js adapter field
+  passwordHash       String?
+  role               Role      @default(VIEWER)
+  title              String?
+  active             Boolean   @default(true)
+  canLogin           Boolean   @default(true)
+  /// Incremented on deactivate / role change / password reset → invalidates existing sessions.
+  sessionVersion     Int       @default(0)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  practiceAreas PracticeArea[] @relation("UserPracticeAreas")
+
+  accounts Account[]
+  sessions Session[]
+
+  // Organisations / contacts
+  relationshipOrgs Organisation[] @relation("OrgRelationshipPartner")
+  ownedContacts    Contact[]      @relation("ContactOwners")
+
+  // Activities
+  ownedActivities    Activity[] @relation("ActivityOwner")
+  attendedActivities Activity[] @relation("ActivityAttendees")
+
+  // Opportunities & pitches
+  ledOpportunities  Opportunity[]            @relation("OpportunityLeadPartner")
+  teamOpportunities Opportunity[]            @relation("OpportunityTeam")
+  stageChanges      OpportunityStageChange[]
+  ownedPitches      Pitch[]                  @relation("PitchOwner")
+
+  // Rankings
+  ownedSubmissions    DirectorySubmission[]  @relation("SubmissionOwner")
+  reviewedSubmissions DirectorySubmission[]  @relation("SubmissionReviewer")
+  rankedIn            DirectorySubmission[]  @relation("SubmissionRankedLawyers")
+  matters             RepresentativeMatter[] @relation("MatterTeam")
+  ownedAwards         Award[]                @relation("AwardOwner")
+
+  // Marketing
+  speakingAt       Event[]       @relation("EventSpeakers")
+  ownedEvents      Event[]       @relation("EventOwner")
+  inviteFollowUps  EventInvite[] @relation("InviteFollowUpOwner")
+  authoredContent  Content[]     @relation("ContentAuthors")
+  ownedClientPlans ClientPlan[]  @relation("ClientPlanOwner")
+
+  tasks     Task[]     @relation("TaskOwner")
+  auditLogs AuditLog[]
+
+  createdOrganisations Organisation[] @relation("OrganisationCreatedBy")
+  createdContacts      Contact[]      @relation("ContactCreatedBy")
+  createdOpportunities Opportunity[]  @relation("OpportunityCreatedBy")
+}
+
+model PracticeArea {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  users         User[]                 @relation("UserPracticeAreas")
+  activities    Activity[]             @relation("ActivityPracticeAreas")
+  opportunities Opportunity[]          @relation("OpportunityPracticeAreas")
+  submissions   DirectorySubmission[]
+  matters       RepresentativeMatter[] @relation("MatterPracticeAreas")
+  awards        Award[]                @relation("AwardPracticeAreas")
+  events        Event[]                @relation("EventPracticeAreas")
+  content       Content[]              @relation("ContentPracticeAreas")
+  clientPlans   ClientPlan[]           @relation("ClientPlanCrossSell")
+}
+
+model Industry {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  active        Boolean        @default(true)
+  organisations Organisation[]
+}
+
+model Tag {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  contacts Contact[] @relation("ContactTags")
+}
+
+/// Key/value settings, e.g. usdToThbRate, stageDefaultProbability.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ───────────────────────── Relationships ─────────────────────────
+
+model Organisation {
+  id                    String             @id @default(cuid())
+  nameEn                String
+  nameTh                String?
+  /// Normalised names for duplicate detection (see src/features/organisations/dedupe.ts)
+  nameKey               String             @default("")
+  nameThKey             String?
+  type                  OrganisationType
+  industryId            String?
+  industry              Industry?          @relation(fields: [industryId], references: [id])
+  /// ISO 3166-1 alpha-2
+  country               String             @default("TH") @db.Char(2)
+  relationshipPartnerId String?
+  relationshipPartner   User?              @relation("OrgRelationshipPartner", fields: [relationshipPartnerId], references: [id])
+  status                OrganisationStatus @default(ACTIVE)
+  isKeyClient           Boolean            @default(false)
+  website               String?
+  notes                 String?
+  createdById           String?
+  createdBy             User?              @relation("OrganisationCreatedBy", fields: [createdById], references: [id])
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  archivedAt            DateTime?
+
+  contacts      Contact[]
+  activities    Activity[]
+  opportunities Opportunity[]          @relation("OpportunityOrganisation")
+  referredOpps  Opportunity[]          @relation("OpportunityReferrerOrg")
+  matters       RepresentativeMatter[]
+  clientPlans   ClientPlan[]
+  tasks         Task[]
+
+  @@index([type, status])
+  @@index([relationshipPartnerId])
+  @@index([nameKey])
+  @@index([nameThKey])
+  @@index([nameKey(ops: raw("gin_trgm_ops"))], type: Gin, map: "Organisation_nameKey_trgm")
+  @@index([nameThKey(ops: raw("gin_trgm_ops"))], type: Gin, map: "Organisation_nameThKey_trgm")
+  // Thai/English substring search (pg_trgm). Declared here so Prisma never drops them.
+  @@index([nameEn(ops: raw("gin_trgm_ops"))], type: Gin, map: "Organisation_nameEn_trgm")
+  @@index([nameTh(ops: raw("gin_trgm_ops"))], type: Gin, map: "Organisation_nameTh_trgm")
+}
+
+model Contact {
+  id                   String            @id @default(cuid())
+  nameEn               String
+  nameTh               String?
+  /// Normalised name for duplicate detection
+  nameKey              String            @default("")
+  title                String?
+  organisationId       String?
+  organisation         Organisation?     @relation(fields: [organisationId], references: [id])
+  email                String?
+  phone                String?
+  linkedinUrl          String?
+  relationshipStrength Int               @default(3) @db.SmallInt
+  preferredLanguage    PreferredLanguage @default(EN)
+  notes                String?
+  createdById          String?
+  createdBy            User?             @relation("ContactCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  archivedAt           DateTime?
+
+  owners       User[]           @relation("ContactOwners")
+  tags         Tag[]            @relation("ContactTags")
+  consents     MailingConsent[]
+  activities   Activity[]       @relation("ActivityContacts")
+  referredOpps Opportunity[]    @relation("OpportunityReferrerContact")
+  refereeRoles Referee[]
+  eventInvites EventInvite[]
+  tasks        Task[]
+
+  @@index([organisationId])
+  @@index([email])
+  @@index([nameKey])
+  @@index([nameEn(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_nameEn_trgm")
+  @@index([nameTh(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_nameTh_trgm")
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_email_trgm")
+}
+
+/// PDPA consent per contact per list. Full history via AuditLog.
+model MailingConsent {
+  id            String        @id @default(cuid())
+  contactId     String
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  list          MailingList
+  optedIn       Boolean
+  consentDate   DateTime      @db.Date
+  withdrawnDate DateTime?     @db.Date
+  source        ConsentSource
+  evidenceNote  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([contactId, list])
+}
+
+model Activity {
+  id               String        @id @default(cuid())
+  type             ActivityType
+  date             DateTime      @db.Date
+  organisationId   String?
+  organisation     Organisation? @relation(fields: [organisationId], references: [id])
+  opportunityId    String?
+  opportunity      Opportunity?  @relation(fields: [opportunityId], references: [id])
+  summary          String
+  nextAction       String?
+  nextActionDue    DateTime?     @db.Date
+  nextActionDone   Boolean       @default(false)
+  nextActionDoneAt DateTime?
+  ownerId          String
+  owner            User          @relation("ActivityOwner", fields: [ownerId], references: [id])
+  /// Gift register value (type = GIFT)
+  giftValue        Decimal?      @db.Decimal(14, 2)
+  giftCurrency     Currency?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  archivedAt       DateTime?
+
+  internalAttendees User[]         @relation("ActivityAttendees")
+  contacts          Contact[]      @relation("ActivityContacts")
+  practiceAreas     PracticeArea[] @relation("ActivityPracticeAreas")
+
+  @@index([date])
+  @@index([ownerId, nextActionDue])
+  @@index([organisationId])
+}
+
+// ───────────────────────────── Pipeline ─────────────────────────────
+
+model Opportunity {
+  id                   String            @id @default(cuid())
+  name                 String
+  organisationId       String
+  organisation         Organisation      @relation("OpportunityOrganisation", fields: [organisationId], references: [id])
+  source               OpportunitySource
+  referrerOrgId        String?
+  referrerOrg          Organisation?     @relation("OpportunityReferrerOrg", fields: [referrerOrgId], references: [id])
+  referrerContactId    String?
+  referrerContact      Contact?          @relation("OpportunityReferrerContact", fields: [referrerContactId], references: [id])
+  leadPartnerId        String
+  leadPartner          User              @relation("OpportunityLeadPartner", fields: [leadPartnerId], references: [id])
+  feeEstimateMin       Decimal?          @db.Decimal(14, 2)
+  feeEstimateMax       Decimal?          @db.Decimal(14, 2)
+  currency             Currency          @default(THB)
+  probability          Int               @default(10) @db.SmallInt
+  stage                OpportunityStage  @default(LEAD)
+  conflictStatus       ConflictStatus    @default(NOT_REQUESTED)
+  expectedDecisionDate DateTime?         @db.Date
+  competitors          String[]
+  confidential         Boolean           @default(false)
+  outcome              String?
+  outcomeReason        OutcomeReason?
+  closedDate           DateTime?         @db.Date
+  createdById          String?
+  createdBy            User?             @relation("OpportunityCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  archivedAt           DateTime?
+
+  practiceAreas PracticeArea[]           @relation("OpportunityPracticeAreas")
+  team          User[]                   @relation("OpportunityTeam")
+  stageChanges  OpportunityStageChange[]
+  pitches       Pitch[]
+  activities    Activity[]
+  tasks         Task[]
+
+  @@index([stage])
+  @@index([leadPartnerId])
+  @@index([organisationId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Opportunity_name_trgm")
+}
+
+model OpportunityStageChange {
+  id            String            @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  fromStage     OpportunityStage?
+  toStage       OpportunityStage
+  changedById   String?
+  changedBy     User?             @relation(fields: [changedById], references: [id])
+  changedAt     DateTime          @default(now())
+
+  @@index([opportunityId, changedAt])
+}
+
+model Pitch {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id])
+  deadline      DateTime
+  ownerId       String
+  owner         User        @relation("PitchOwner", fields: [ownerId], references: [id])
+  format        PitchFormat @default(WRITTEN)
+  status        PitchStatus @default(DRAFTING)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  archivedAt    DateTime?
+
+  checklist PitchChecklistItem[]
+  tasks     Task[]
+
+  @@index([deadline])
+}
+
+model PitchChecklistItem {
+  id         String    @id @default(cuid())
+  pitchId    String
+  pitch      Pitch     @relation(fields: [pitchId], references: [id], onDelete: Cascade)
+  label      String
+  /// One of the five standard items (team CVs, credentials…) — cannot be removed.
+  isStandard Boolean   @default(false)
+  done       Boolean   @default(false)
+  doneAt     DateTime?
+  sortOrder  Int       @default(0)
+}
+
+// ─────────────────── Rankings, credentials & awards ───────────────────
+
+model Directory {
+  id          String                @id @default(cuid())
+  name        String                @unique
+  website     String?
+  active      Boolean               @default(true)
+  submissions DirectorySubmission[]
+}
+
+model DirectorySubmission {
+  id                String           @id @default(cuid())
+  directoryId       String
+  directory         Directory        @relation(fields: [directoryId], references: [id])
+  year              Int              @db.SmallInt
+  practiceAreaId    String
+  practiceArea      PracticeArea     @relation(fields: [practiceAreaId], references: [id])
+  deadline          DateTime?        @db.Date
+  ownerId           String
+  owner             User             @relation("SubmissionOwner", fields: [ownerId], references: [id])
+  partnerReviewerId String?
+  partnerReviewer   User?            @relation("SubmissionReviewer", fields: [partnerReviewerId], references: [id])
+  status            SubmissionStatus @default(PLANNING)
+  resultTier        String?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  archivedAt        DateTime?
+
+  rankedLawyers User[]                 @relation("SubmissionRankedLawyers")
+  matters       RepresentativeMatter[] @relation("SubmissionMatters")
+  referees      Referee[]
+  tasks         Task[]
+
+  @@unique([directoryId, year, practiceAreaId])
+  @@index([deadline])
+}
+
+/// A client contact nominated as a referee for a submission.
+/// Reuse within the previous 2 years is computed at runtime (not stored) and shown as a warning.
+model Referee {
+  id           String              @id @default(cuid())
+  contactId    String
+  contact      Contact             @relation(fields: [contactId], references: [id])
+  submissionId String
+  submission   DirectorySubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  briefed      Boolean             @default(false)
+  briefedDate  DateTime?           @db.Date
+  notes        String?
+  createdAt    DateTime            @default(now())
+
+  @@unique([contactId, submissionId])
+}
+
+model RepresentativeMatter {
+  id                   String        @id @default(cuid())
+  title                String
+  clientOrganisationId String?
+  clientOrganisation   Organisation? @relation(fields: [clientOrganisationId], references: [id])
+  /// Shown instead of the client name when anonymised, e.g. "a Japanese automotive group".
+  clientDisplayName    String?
+  anonymised           Boolean       @default(false)
+  value                Decimal?      @db.Decimal(16, 2)
+  currency             Currency      @default(THB)
+  year                 Int           @db.SmallInt
+  publishable          Boolean       @default(false)
+  confidential         Boolean       @default(false)
+  description          String
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  archivedAt           DateTime?
+
+  practiceAreas PracticeArea[]        @relation("MatterPracticeAreas")
+  team          User[]                @relation("MatterTeam")
+  submissions   DirectorySubmission[] @relation("SubmissionMatters")
+
+  @@index([year])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "RepresentativeMatter_title_trgm")
+}
+
+model Award {
+  id         String      @id @default(cuid())
+  name       String
+  organiser  String?
+  category   String
+  year       Int         @db.SmallInt
+  deadline   DateTime?   @db.Date
+  ownerId    String?
+  owner      User?       @relation("AwardOwner", fields: [ownerId], references: [id])
+  status     AwardStatus @default(ENTERED)
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  archivedAt DateTime?
+
+  practiceAreas PracticeArea[] @relation("AwardPracticeAreas")
+}
+
+// ───────────────────────────── Marketing ─────────────────────────────
+
+model Event {
+  id               String      @id @default(cuid())
+  title            String
+  startsAt         DateTime
+  endsAt           DateTime?
+  format           EventFormat @default(IN_PERSON)
+  venue            String?
+  onlineUrl        String?
+  externalSpeakers String?
+  budget           Decimal?    @db.Decimal(14, 2)
+  actualCost       Decimal?    @db.Decimal(14, 2)
+  currency         Currency    @default(THB)
+  /// BD coordinator responsible for the event.
+  ownerId          String?
+  owner            User?       @relation("EventOwner", fields: [ownerId], references: [id])
+  status           EventStatus @default(PLANNING)
+  notes            String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  archivedAt       DateTime?
+
+  practiceAreas PracticeArea[] @relation("EventPracticeAreas")
+  speakers      User[]         @relation("EventSpeakers")
+  invites       EventInvite[]
+  tasks         Task[]
+
+  @@index([startsAt])
+}
+
+model EventInvite {
+  id              String    @id @default(cuid())
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contactId       String
+  contact         Contact   @relation(fields: [contactId], references: [id])
+  invited         Boolean   @default(false)
+  invitedAt       DateTime?
+  rsvp            Rsvp      @default(NO_REPLY)
+  attended        Boolean?
+  followUpOwnerId String?
+  followUpOwner   User?     @relation("InviteFollowUpOwner", fields: [followUpOwnerId], references: [id])
+  followUpDone    Boolean   @default(false)
+
+  @@unique([eventId, contactId])
+}
+
+model Content {
+  id              String        @id @default(cuid())
+  title           String
+  type            ContentType
+  channel         String?
+  status          ContentStatus @default(IDEA)
+  publishDate     DateTime?     @db.Date
+  url             String?
+  engagementNotes String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  archivedAt      DateTime?
+
+  authors       User[]         @relation("ContentAuthors")
+  practiceAreas PracticeArea[] @relation("ContentPracticeAreas")
+  tasks         Task[]
+
+  @@index([status, publishDate])
+}
+
+model ClientPlan {
+  id                String       @id @default(cuid())
+  organisationId    String
+  organisation      Organisation @relation(fields: [organisationId], references: [id])
+  year              Int          @db.SmallInt
+  objectives        String
+  reviewMeetingDate DateTime?    @db.Date
+  healthScore       Int          @default(3) @db.SmallInt
+  ownerId           String?
+  owner             User?        @relation("ClientPlanOwner", fields: [ownerId], references: [id])
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  archivedAt        DateTime?
+
+  crossSellTargets PracticeArea[] @relation("ClientPlanCrossSell")
+  tasks            Task[]
+
+  @@unique([organisationId, year])
+}
+
+// ─────────────────────── Work management & system ───────────────────────
+
+/// A to-do. May link to at most ONE record (enforced by a DB check constraint).
+model Task {
+  id      String     @id @default(cuid())
+  title   String
+  dueDate DateTime?  @db.Date
+  ownerId String
+  owner   User       @relation("TaskOwner", fields: [ownerId], references: [id])
+  status  TaskStatus @default(OPEN)
+  notes   String?
+
+  opportunityId  String?
+  opportunity    Opportunity?         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  organisationId String?
+  organisation   Organisation?        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  contactId      String?
+  contact        Contact?             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  pitchId        String?
+  pitch          Pitch?               @relation(fields: [pitchId], references: [id], onDelete: Cascade)
+  submissionId   String?
+  submission     DirectorySubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  eventId        String?
+  event          Event?               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contentId      String?
+  content        Content?             @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  clientPlanId   String?
+  clientPlan     ClientPlan?          @relation(fields: [clientPlanId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, status, dueDate])
+}
+
+/// Append-only. diff = { field: [old, new] }.
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id])
+  action    AuditAction
+  entity    String
+  entityId  String?
+  diff      Json?
+  ip        String?
+  createdAt DateTime    @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+/// Used for login rate-limiting.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+}
+
+// ───────────── Auth.js adapter tables (for future Microsoft Entra ID SSO) ─────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
